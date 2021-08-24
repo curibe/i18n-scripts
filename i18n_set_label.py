@@ -195,10 +195,11 @@ def overwrite(**kwargs):
     for match in matches:
         datai18n_text = match.get("data-i18n")
         oldattr = f"data-i18n=\"{datai18n_text}\""
-        if name in datai18n_text:
+        if datai18n_text.startswith(f"{name}-"):
             print(f"{datai18n_text} --> Nothing to change....")
         else:
-            newattr = f"data-i18n=\"{name}-{datai18n_text}\""
+            newattr = f"data-i18n=\"{name}-{datai18n_text.lower()}\""
+            print(f"{oldattr} --> {newattr}")
             new_content = new_content.replace(oldattr, newattr)
 
     if kwargs["showfinal"]:
