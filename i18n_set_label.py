@@ -173,6 +173,47 @@ def show(**kwargs):
 
 @cli.command()
 @click.argument('filename')
+@click.option('--showfinal', '-sf', is_flag=True, help="to show the insertion in dry-run way")
+@click.option('--replace', is_flag=True, help='to insert the data-i18n attr in-place')
+@click.option('--show-diff','-sd', is_flag=True,help="to show the git status and diff of file changed")
+def overwrite(**kwargs):
+    filename = kwargs["filename"]
+    name = Path(filename).stem.replace("_","-").lower()
+
+    content = read_file(filename)
+    new_content = content[:]
+
+    print_header(' FOUND TAGS ', Fore.MAGENTA)
+
+    soupini = BeautifulSoup(content, 'html.parser')
+    matches = soupini.find_all(["h1", "h2", "h3"], {"data-i18n": True})
+    show_table({"bs4": matches},
+               Fore.BLUE,
+               fmt="plain",
+               header=[f"+{'bs4: with id':-^100s}+"]
+    )
+
+    for match in matches:
+        datai18n_text = match.get("data-i18n")
+        oldattr = f"data-i18n=\"{datai18n_text}\""
+        if name in datai18n_text:
+            print(f"{datai18n_text} --> Nothing to change....")
+        else:
+            newattr = f"data-i18n=\"{name}-{datai18n_text}\""
+            new_content = new_content.replace(oldattr, newattr)
+
+    if kwargs["showfinal"]:
+        print_header(" RESULT ",Fore.MAGENTA)
+        print_info(new_content, f"{' New content':^30s}", Fore.YELLOW)
+
+    if kwargs["replace"]:
+        write_file(filename, new_content)
+
+    if kwargs["show_diff"]:
+        show_diff(filename)
+
+@cli.command()
+@click.argument('filename')
 def showdiff(filename):
     """
     To show git status/diff of file changed
