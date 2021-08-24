@@ -1,10 +1,14 @@
 import re
+import os
 import click
 from bs4 import BeautifulSoup
 from tabulate import tabulate
 from colorama import Fore, Style
+from pathlib import Path
+import subprocess
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+
 
 def read_file(filename):
     with open(filename, "r") as fstream:
@@ -16,6 +20,43 @@ def write_file(filename, content):
     with open(filename, "w") as f:
         f.write(content)
 
+def show_table(content, color, fmt='pretty', header="keys",colalign=None):
+    print(color)
+    print(tabulate(
+        content,
+        headers=header,
+        tablefmt=fmt,
+        colalign=colalign
+    ))
+    print(Style.RESET_ALL)
+
+def print_header(content,color):
+    print(color)
+    print(f"{content.center(120,'=')}")
+    print(Style.RESET_ALL)
+
+def print_info(content,title,color,type='text'):
+        print(color)
+        print(title)
+        print(f'{"-"*30}')
+        if type=='text':
+            print(content)
+        if type=='json':
+            print(json.dumps(content, indent=4))
+        print(Style.RESET_ALL)
+
+def show_diff(filename):
+    file=Path(filename)
+    basename = file.parent.as_posix()
+    name = file.name
+    os.chdir(basename)
+
+    print_header(" GIT STATUS ", Fore.MAGENTA)
+    subprocess.run(["git","status"])
+    
+    print_header(f" GIT DIFF: {name} ", Fore.MAGENTA)
+    subprocess.run(["git","--no-pager","diff", name])
+
 
 @click.group(context_settings=CONTEXT_SETTINGS)
 def cli():
@@ -24,9 +65,31 @@ def cli():
 
 @cli.command()
 @click.argument('filename')
-@click.option('--showfinal', is_flag=True, help="to show the insertion in dry run way")
+@click.option('--showfinal', '-sf', is_flag=True, help="to show the insertion in dry-run way")
 @click.option('--replace', is_flag=True, help='to insert the data-i18n attr in-place')
+@click.option('--show-diff','-sd', is_flag=True,help="to show the git status and diff of file changed")
 def show(**kwargs):
+    """
+    To check all tags h1,h2,h3 tags and insert attr 'data-i18n'
+
+    This command allows to check all h1, h2 and h3 tags inside a html file and
+    show/insert the attribute 'data-i18n' for internationalization.
+
+    HOW TO USE 
+    
+    ===========
+
+     1. For showing how could the final verion be after the insertion: 
+
+        $ python i18n_set_label.py show path/to/file/<filename>.html -sf/--showfinal
+
+    2. For doing the insertion in-place: 
+
+        $ python i18n_set_label.py show path/to/file/<filename>.html --replace -sd/--show-diff
+
+        where the option -sd is used to show the git status and git diff of the file changed
+
+    """
     filename = kwargs["filename"]
 
     content = read_file(filename)
@@ -48,34 +111,21 @@ def show(**kwargs):
             )
     ]
 
-    print(Fore.GREEN)
-    print(tabulate(
-        {"regex: headers with id": alltags},
-        tablefmt="pretty",
-        headers="keys"
-        )
-    )
-    print(tabulate(
-        {"regex: headers without id": headers_without_id},
-        tablefmt="pretty",
-        headers="keys"
-        ),
-        Style.RESET_ALL
-    )
+    print_header(' FIND TAGS AND COMPARING ', Fore.MAGENTA)
 
+    show_table({"regex: headers with id": alltags}, Fore.GREEN)
+    show_table({"regex: headers without id": headers_without_id}, Fore.GREEN)
+    
     soupini = BeautifulSoup(content, 'html.parser')
 
     matches = soupini.find_all(["h1", "h2", "h3"], id=re.compile(".+"))
-    print(Fore.BLUE)
-    print(tabulate(
-        {"bs4": matches},
-        tablefmt="plain",
-        headers=[f"+{'bs4: with id':-^100s}+"],
-        colalign=("left",)
-        )
+    show_table({"bs4": matches},
+               Fore.BLUE,
+               fmt="plain",
+               colalign=("left",),
+               header=[f"+{'bs4: with id':-^100s}+"]
     )
-    print(Style.RESET_ALL)
-
+   
     for tag in alltags:
         if ('"h1"' not in tag):
             if ("data-i18n" not in tag):
@@ -93,23 +143,36 @@ def show(**kwargs):
             new_content = new_content.replace(elm[0], newtag)
 
     if kwargs["showfinal"]:
-        print(Fore.YELLOW)
-        print(f"{'bs4':^30s}")
-        print(f'{"-"*30}')
-        print(new_content)
-        print(Style.RESET_ALL)
+        print_header(" RESULT ",Fore.MAGENTA)
+        print_info(new_content, f"{'with bs4':^30s}", Fore.YELLOW)
 
     if kwargs["replace"]:
         write_file(filename, new_content)
 
-    # for elm in matches:
-    #     if elm.get("id") != "h1":
-    #         elm.attrs['data-i18n'] = elm.get("id")
-    # print(Fore.GREEN, soup, Style.RESET_ALL)
-    # modified_source = soup.encode(formatter=soup.original_encoding)
-    # import pdb; pdb.set_trace()
-    # with open("output.html", "wb") as file:
-    #     file.write(modified_source)
+    if kwargs["show_diff"]:
+        show_diff(filename)
+
+
+@cli.command()
+@click.argument('filename')
+def showdiff(filename):
+    """
+    To show git status/diff of file changed
+
+    This command allows to show the git status and git diff of the file chnged
+
+    HOW TO USE 
+    
+    ===========
+
+    1. For show the git status and git diff of the file changed
+
+        $ python i18n_set_label.py showdiff path/to/file/filename.html
+
+
+    """
+    show_diff(filename)
+
 
 
 if __name__ == '__main__':
