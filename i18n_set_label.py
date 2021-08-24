@@ -114,7 +114,7 @@ def show(**kwargs):
             )
     ]
 
-    print_header(' FIND TAGS AND COMPARING ', Fore.MAGENTA)
+    print_header(f' FIND TAGS AND COMPARING IN {Path(filename).name}  ', Fore.LIGHTCYAN_EX)
 
     show_table({"regex: headers with id": alltags}, Fore.GREEN)
     show_table({"regex: headers without id": headers_without_id}, Fore.GREEN)
@@ -132,14 +132,13 @@ def show(**kwargs):
         if ('"h1"' not in tag):
             tagbs4 = BeautifulSoup(tag, 'html.parser')
             tag_content = tagbs4.contents[0]
-
             if not kwargs["overwrite"]:
                 if ("data-i18n" not in tag):
-                    datai18n_text = tag_content.get("id").replace("-header", "")
+                    datai18n_text = tag_content.get("id").replace("-header", "").lower()
                     newtag = f"{tag[:-1]} data-i18n=\"{name}-{datai18n_text}\">"
                     new_content = new_content.replace(tag, newtag)
             else:
-                datai18n_text = tag_content.get("id").replace("-header", "")
+                datai18n_text = tag_content.get("id").replace("-header", "").lower()
                 
                 if not tag_content.has_attr("data-i18n"):
                     newtag = f"{tag[:-1]} data-i18n=\"{name}-{datai18n_text}\">"
@@ -157,7 +156,7 @@ def show(**kwargs):
             tag = elm[0]
             id_clousure = tag.find(">")
             # import pdb; pdb.set_trace()
-            newtag = f"{tag[:id_clousure]} data-i18n=\"{elm[2].lower().replace(' ','-')}\">{elm[2]}"
+            newtag = f"{tag[:id_clousure]} data-i18n=\"{name}-{elm[2].lower().replace(' ','-')}\">{elm[2]}"
             new_content = new_content.replace(elm[0], newtag)
 
     if kwargs["showfinal"]:
