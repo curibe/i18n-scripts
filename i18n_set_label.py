@@ -122,7 +122,6 @@ def show(**kwargs):
     show_table({"bs4": matches},
                Fore.BLUE,
                fmt="plain",
-               colalign=("left",),
                header=[f"+{'bs4: with id':-^100s}+"]
     )
    
