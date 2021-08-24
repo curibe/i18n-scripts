@@ -6,6 +6,7 @@ from tabulate import tabulate
 from colorama import Fore, Style
 from pathlib import Path
 import subprocess
+import pdb
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
@@ -68,6 +69,7 @@ def cli():
 @click.option('--showfinal', '-sf', is_flag=True, help="to show the insertion in dry-run way")
 @click.option('--replace', is_flag=True, help='to insert the data-i18n attr in-place')
 @click.option('--show-diff','-sd', is_flag=True,help="to show the git status and diff of file changed")
+@click.option('--overwrite','-ow',is_flag=True,help="to overwrite the data-i18n attr on files changed")
 def show(**kwargs):
     """
     To check all tags h1,h2,h3 tags and insert attr 'data-i18n'
@@ -91,6 +93,7 @@ def show(**kwargs):
 
     """
     filename = kwargs["filename"]
+    name = Path(filename).stem.replace("_","-").lower()
 
     content = read_file(filename)
     new_content = content[:]
@@ -127,11 +130,27 @@ def show(**kwargs):
    
     for tag in alltags:
         if ('"h1"' not in tag):
-            if ("data-i18n" not in tag):
-                tagbs4 = BeautifulSoup(tag, 'html.parser')
-                datai18n_text = tagbs4.contents[0].get("id").replace("-header", "")
-                newtag = f"{tag[:-1]} data-i18n=\"{datai18n_text}\">"
-                new_content = new_content.replace(tag, newtag)
+            tagbs4 = BeautifulSoup(tag, 'html.parser')
+            tag_content = tagbs4.contents[0]
+
+            if not kwargs["overwrite"]:
+                if ("data-i18n" not in tag):
+                    datai18n_text = tag_content.get("id").replace("-header", "")
+                    newtag = f"{tag[:-1]} data-i18n=\"{name}-{datai18n_text}\">"
+                    new_content = new_content.replace(tag, newtag)
+            else:
+                datai18n_text = tag_content.get("id").replace("-header", "")
+                
+                if not tag_content.has_attr("data-i18n"):
+                    newtag = f"{tag[:-1]} data-i18n=\"{name}-{datai18n_text}\">"
+                    new_content = new_content.replace(tag, newtag)
+                else:
+                    datai18n_content = tag_content.get("data-i18n")
+                    oldattr = f"data-i18n=\"{datai18n_content}\""
+                    newattr = f"data-i18n=\"{name}-{datai18n_text}\""
+                    new_content = new_content.replace(oldattr, newattr)
+
+            
 
     if headers_without_id:
         for elm in headers_without_id:
