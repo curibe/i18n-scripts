@@ -183,7 +183,7 @@ def overwrite(**kwargs):
     content = read_file(filename)
     new_content = content[:]
 
-    print_header(' FOUND TAGS ', Fore.MAGENTA)
+    print_header(f' FOUND TAGS IN {Path(filename).name} ', Fore.LIGHTCYAN_EX)
 
     soupini = BeautifulSoup(content, 'html.parser')
     matches = soupini.find_all(["h1", "h2", "h3"], {"data-i18n": True})
