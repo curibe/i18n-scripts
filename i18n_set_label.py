@@ -5,7 +5,9 @@ from bs4 import BeautifulSoup
 from tabulate import tabulate
 from colorama import Fore, Style
 from pathlib import Path
+from operator import itemgetter
 import subprocess
+import textwrap
 import pdb
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
@@ -36,6 +38,15 @@ def print_header(content,color):
     print(f"{content.center(120,'=')}")
     print(Style.RESET_ALL)
 
+def print_message(content, color, fmt):
+    print(color)
+    print(tabulate(
+        content,
+        headers="keys",
+        tablefmt=fmt
+    ))
+    print(Style.RESET_ALL)
+
 def print_info(content,title,color,type='text'):
         print(color)
         print(title)
@@ -57,6 +68,24 @@ def show_diff(filename):
     
     print_header(f" GIT DIFF: {name} ", Fore.MAGENTA)
     subprocess.run(["git","--no-pager","diff", name])
+
+def replace_new_tag(kwargs):
+    name, attr_text, pattern, content, new_content = (
+        itemgetter(
+            "name",
+            "attr_text", 
+            "pattern", 
+            "content",
+            "new_content"
+            )(kwargs)
+    )
+    matches = re.finditer(pattern, content)
+    for match in matches:
+        oldtag = match.group(0)
+        idx = re.search(">",oldtag).span()[0]
+        newtag = f"{oldtag[:idx]} data-i18n=\"{name}-{attr_text}\"{oldtag[idx:]}"
+        new_content = new_content.replace(oldtag, newtag) 
+    return new_content
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
@@ -98,66 +127,73 @@ def show(**kwargs):
     content = read_file(filename)
     new_content = content[:]
 
-    alltags = [
-        x.group() for x in re.finditer(
-            r"<(h1|h2|h3)[^>]*\sid\b=\"([^\"]*)\"[^>]*>",
-            content,
-            re.MULTILINE | re.DOTALL
-        )
-    ]
-    headers_without_id = [
-        [x.group(), x.group(1), x.group(3)]
-        for x in re.finditer(
-            r"(<(h1|h2|h3)>)([\w ]*)",
-            content,
-            re.MULTILINE | re.DOTALL
-            )
-    ]
-
-    print_header(f' FIND TAGS AND COMPARING IN {Path(filename).name}  ', Fore.LIGHTCYAN_EX)
-
-    show_table({"regex: headers with id": alltags}, Fore.GREEN)
-    show_table({"regex: headers without id": headers_without_id}, Fore.GREEN)
-    
     soupini = BeautifulSoup(content, 'html.parser')
 
-    matches = soupini.find_all(["h1", "h2", "h3"], id=re.compile(".+"))
-    show_table({"bs4": matches},
-               Fore.BLUE,
-               fmt="plain",
-               header=[f"+{'bs4: with id':-^100s}+"]
-    )
-   
-    for tag in alltags:
-        if ('"h1"' not in tag):
-            tagbs4 = BeautifulSoup(tag, 'html.parser')
-            tag_content = tagbs4.contents[0]
-            if not kwargs["overwrite"]:
-                if ("data-i18n" not in tag):
-                    datai18n_text = tag_content.get("id").replace("-header", "").lower()
-                    newtag = f"{tag[:-1]} data-i18n=\"{name}-{datai18n_text}\">"
-                    new_content = new_content.replace(tag, newtag)
+    headers_with_id = soupini.find_all(["h1", "h2", "h3", "h4"], {"id":True})
+    headers_without_id = soupini.find_all(["h1", "h2", "h3", "h4"], {"id":False})
+
+    show_table({"Headers with id": headers_with_id}, Fore.GREEN)
+    show_table({"Headers without id": headers_without_id}, Fore.GREEN)
+
+    for tag in headers_with_id:
+        if tag.get("id") != "h1":
+            id_text = tag.get("id")
+            datai18n_text = id_text.replace("-header","").lower()
+            if not tag.has_attr("data-i18n"):
+                 pattern = r"(<{}[^>]*\sid\b=\"{}\"[^>]*>)".format(tag.name,tag.get("id"))
+                 new_content = replace_new_tag({
+                     "name":name,
+                     "pattern":pattern,
+                     "content":content,
+                     "new_content":new_content,
+                     "attr_text":datai18n_text
+                 })             
             else:
-                datai18n_text = tag_content.get("id").replace("-header", "").lower()
-                
-                if not tag_content.has_attr("data-i18n"):
-                    newtag = f"{tag[:-1]} data-i18n=\"{name}-{datai18n_text}\">"
-                    new_content = new_content.replace(tag, newtag)
-                else:
-                    datai18n_content = tag_content.get("data-i18n")
-                    oldattr = f"data-i18n=\"{datai18n_content}\""
-                    newattr = f"data-i18n=\"{name}-{datai18n_text}\""
-                    new_content = new_content.replace(oldattr, newattr)
+                print_message({
+                        "FILENAME": [filename],
+                        "TAG: " : [textwrap.fill(str(tag), width=60)],
+                        "INFO": ["Nothing to change"]
+                    }, 
+                    Fore.LIGHTRED_EX, "simple"
+                )
 
-            
+   
+    for tag in headers_without_id:
+        if tag.attrs:
+            if not tag.has_attr("data-i18n"):
 
-    if headers_without_id:
-        for elm in headers_without_id:
-            tag = elm[0]
-            id_clousure = tag.find(">")
-            # import pdb; pdb.set_trace()
-            newtag = f"{tag[:id_clousure]} data-i18n=\"{name}-{elm[2].lower().replace(' ','-')}\">{elm[2]}"
-            new_content = new_content.replace(elm[0], newtag)
+                attrs_name = list(tag.attrs.keys())
+                attrs_vals = list(tag.attrs.values())
+                datai18n_text = tag.text.lower().strip().replace(" ","-")
+                pattern = r"(<{}[^>]*\s{}\b=\"{}\"[^>]*>{})".format(
+                    tag.name, attrs_name[0], " ".join(attrs_vals[0]), tag.text
+                )
+                new_content = replace_new_tag({
+                        "name":name,
+                        "pattern":pattern,
+                        "content":content,
+                        "new_content":new_content,
+                        "attr_text":datai18n_text
+                })
+            else:
+                print_message({
+                        "FILENAME": [filename],
+                        "TAG: " : [textwrap.fill(str(tag), width=60)],
+                        "INFO": ["Nothing to change"]
+                    }, 
+                    Fore.LIGHTRED_EX, "simple"
+                )
+        else:
+            datai18n_text = tag.text.lower().strip().replace(" ","-")
+            pattern = r"(<{}>{})".format(tag.name, tag.text)
+            new_content = replace_new_tag({
+                        "name":name,
+                        "pattern":pattern,
+                        "content":content,
+                        "new_content":new_content,
+                        "attr_text":datai18n_text
+            })
+
 
     if kwargs["showfinal"]:
         print_header(" RESULT ",Fore.MAGENTA)
@@ -168,6 +204,7 @@ def show(**kwargs):
 
     if kwargs["show_diff"]:
         show_diff(filename)
+    
 
 
 @cli.command()
@@ -185,7 +222,7 @@ def overwrite(**kwargs):
     print_header(f' FOUND TAGS IN {Path(filename).name} ', Fore.LIGHTCYAN_EX)
 
     soupini = BeautifulSoup(content, 'html.parser')
-    matches = soupini.find_all(["h1", "h2", "h3"], {"data-i18n": True})
+    matches = soupini.find_all(["h1", "h2", "h3", "h4"], {"data-i18n": True})
     show_table({"bs4": matches},
                Fore.BLUE,
                fmt="plain",
