@@ -33,9 +33,15 @@ def check_and_set_word_order(string,words):
         string_list.insert(i,word)
     return ','.join(string_list)
 
+def set_filter_lang(match,word):
+    lang = match.group(2)
+    line = match.group(1)
+    newline = re.sub(lang,f"'{word}'",line)
+    return newline
+
     
 
-def replace_with_sed(filename, old, new, inplace=False):
+def replace_with_sed(filename, old, new, inplace=False, text_to_find='g.lang_code'):
     # rx = re.compile("([\{\}\[\]])")
     new = re.escape(new)
     old = re.escape(old)
@@ -51,7 +57,7 @@ def replace_with_sed(filename, old, new, inplace=False):
         pcat = subprocess.Popen(["cat", filename], stdout=subprocess.PIPE)
         # pdb.set_trace()
         pgrep = subprocess.Popen(
-                ["grep", "g.lang_code", "-n"],
+                ["grep", text_to_find, "-n"],
                 stdin=pcat.stdout,
                 stdout=subprocess.PIPE
         )
@@ -68,7 +74,7 @@ def replace_with_sed(filename, old, new, inplace=False):
 
         psed = subprocess.Popen(cmd, stdout=subprocess.PIPE)
         pgrep = subprocess.Popen(
-                ["grep", "g.lang_code", "-n"],
+                ["grep", text_to_find, "-n"],
                 stdin=psed.stdout,
                 stdout=subprocess.PIPE
         )
@@ -89,7 +95,7 @@ def findreplace(**kwargs):
     filename = kwargs["filename"]
 
     process = subprocess.run(['cat',filename],stdout=subprocess.PIPE)
-    re_obj = re.compile(r'(wikibase:language )("([^"]*)")')
+    re_obj = re.compile(r'(wikibase:language[\s]+)("([^"]*)")')
     matches = re_obj.search(process.stdout.decode('utf-8'))
     # pdb.set_trace()
     if matches:
@@ -120,6 +126,41 @@ def findreplace(**kwargs):
     else:
         print_info({
             "WARNING: ": [f"The file '{Path(filename).name}' not has language option inside"]
+            }, 
+            Fore.LIGHTYELLOW_EX, "plain")
+
+@cli.command()
+@click.argument('filename')
+@click.option('--inplace',"-i",is_flag=True)
+def filterlang(**kwargs):
+    filename = kwargs["filename"]
+
+    process = subprocess.run(['cat',filename],stdout=subprocess.PIPE)
+    re_obj = re.compile(r"(FILTER[\s]*\(LANG\(\?\w*\)[\s=]*([\"']([^'\"]*)[\"'])\))")
+    matches = re_obj.search(process.stdout.decode('utf-8'))
+    # pdb.set_trace()
+    if matches:
+        oldline = matches.group(1)
+        newline = set_filter_lang(matches, "{{ g.lang_code }}")
+
+        if newline != oldline:
+            replacement=replace_with_sed(
+                filename,oldline, newline,
+                inplace=kwargs["inplace"],
+                text_to_find="FILTER.*g.lang_code")
+            print_info({
+                "Filename": [Path(filename).name], 
+                "Text that will be replaced\n( nline: newtext )": [
+                    '\n'.join(line.strip() for line in re.findall(r'.{1,90}(?:\s+|$)', replacement.decode('utf-8')))
+                    # textwrap.fill(replacement.decode('utf-8'), width=100)
+                ]
+            }, Fore.LIGHTGREEN_EX, "psql")
+        else:
+           print_info({"INFO: " : ["Nothing to change"]}, Fore.LIGHTRED_EX, "plain") 
+
+    else:
+         print_info({
+            "WARNING: ": [f"The file '{Path(filename).name}' not has FILTER LANG inside"]
             }, 
             Fore.LIGHTYELLOW_EX, "plain")
 
