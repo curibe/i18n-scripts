@@ -6,6 +6,7 @@ from tabulate import tabulate
 from colorama import Fore, Style
 from pathlib import Path
 from operator import itemgetter
+from collections import Counter
 import subprocess
 import textwrap
 import pdb
@@ -87,6 +88,60 @@ def replace_new_tag(kwargs):
         new_content = new_content.replace(oldtag, newtag) 
     return new_content
 
+def replace_repeated(kwargs):
+    pattern, attr_text, new_content, loc = (
+        itemgetter(
+            "pattern",
+            "attr_text", 
+            "new_content",
+            "loc"
+            )(kwargs)
+    )
+
+    matches = re.finditer(pattern, new_content)
+
+    for match in matches:
+        oldtag = match.group(0)
+        oldattr = f"data-i18n=\"{attr_text}\""
+        newattr = f"data-i18n=\"{attr_text}-w{loc}\""
+        newtag = oldtag.replace(oldattr,newattr)
+        new_content = new_content.replace(oldtag,newtag)
+        return new_content
+
+def create_collection(attr_content,loc_repeated):
+    array = []
+    i = 0
+    olditem=''
+    for item,loc in loc_repeated:
+        if item != olditem:
+            i=0
+        array.append((i,item,loc))
+        olditem=item
+        i+=1
+    return array
+        
+
+def check_repeated(new_content):
+    soupend = BeautifulSoup(new_content,'html.parser')
+    alltags = soupend.find_all([],{'data-i18n':True})
+    attr_content = [tag.get('data-i18n') for tag in alltags]
+    loc_repeated = [(x,i) for i, x in enumerate(attr_content) if attr_content.count(x)>1]
+    
+    if loc_repeated:
+        for loc,content,i in create_collection(attr_content, loc_repeated):
+            tag = alltags[i]
+            pattern=r"(<{}[^>]*\sdata\-i18n\b=\"{}\"[^>]*>{})".format(
+                tag.name, content, next(tag.children)
+            )
+            new_content = replace_repeated({
+                "pattern":pattern,
+                "attr_text": tag.get("data-i18n"),
+                "new_content": new_content,
+                "loc":loc
+            })
+        return new_content
+    else:
+        return new_content
 
 @click.group(context_settings=CONTEXT_SETTINGS)
 def cli():
@@ -129,9 +184,10 @@ def show(**kwargs):
 
     soupini = BeautifulSoup(content, 'html.parser')
 
-    headers_with_id = soupini.find_all(["h1", "h2", "h3", "h4"], {"id":True})
-    headers_without_id = soupini.find_all(["h1", "h2", "h3", "h4"], {"id":False})
+    headers_with_id = soupini.find_all(["h1", "h2", "h3", "h4","h5"], {"id":True})
+    headers_without_id = soupini.find_all(["h1", "h2", "h3", "h4","h5"], {"id":False})
 
+    print_header(f' TAGS FOUND IN {Path(filename).name} ', Fore.LIGHTCYAN_EX)
     show_table({"Headers with id": headers_with_id}, Fore.GREEN)
     show_table({"Headers without id": headers_without_id}, Fore.GREEN)
 
@@ -147,10 +203,17 @@ def show(**kwargs):
                      "content":content,
                      "new_content":new_content,
                      "attr_text":datai18n_text
-                 })             
+                 })
+                 print_message({
+                        "FILENAME": [Path(filename).name],
+                        "TAG: " : [textwrap.fill(str(tag), width=60)],
+                        "INFO": ["Change"]
+                    }, 
+                    Fore.LIGHTYELLOW_EX, "simple"
+                )             
             else:
                 print_message({
-                        "FILENAME": [filename],
+                        "FILENAME": [Path(filename).name],
                         "TAG: " : [textwrap.fill(str(tag), width=60)],
                         "INFO": ["Nothing to change"]
                     }, 
@@ -164,9 +227,14 @@ def show(**kwargs):
 
                 attrs_name = list(tag.attrs.keys())
                 attrs_vals = list(tag.attrs.values())
+                tag_content = next(tag.children)
+                # if bool(re.search("<.*>",str(tag_content))):
+                #     datai18n_text = tag_content.text.lower().strip().replace(" ","-")
+                # else:
+                #     datai18n_text = tag.text.lower().strip().replace(" ","-")
                 datai18n_text = tag.text.lower().strip().replace(" ","-")
                 pattern = r"(<{}[^>]*\s{}\b=\"{}\"[^>]*>{})".format(
-                    tag.name, attrs_name[0], " ".join(attrs_vals[0]), tag.text
+                    tag.name, attrs_name[0], " ".join(attrs_vals[0]), tag_content
                 )
                 new_content = replace_new_tag({
                         "name":name,
@@ -175,9 +243,16 @@ def show(**kwargs):
                         "new_content":new_content,
                         "attr_text":datai18n_text
                 })
+                print_message({
+                        "FILENAME": [Path(filename).name],
+                        "TAG: " : [textwrap.fill(str(tag), width=60)],
+                        "INFO": ["Change"]
+                    }, 
+                    Fore.LIGHTYELLOW_EX , "simple"
+                )  
             else:
                 print_message({
-                        "FILENAME": [filename],
+                        "FILENAME": [Path(filename).name],
                         "TAG: " : [textwrap.fill(str(tag), width=60)],
                         "INFO": ["Nothing to change"]
                     }, 
@@ -193,7 +268,15 @@ def show(**kwargs):
                         "new_content":new_content,
                         "attr_text":datai18n_text
             })
+            print_message({
+                        "FILENAME": [Path(filename).name],
+                        "TAG: " : [textwrap.fill(str(tag), width=60)],
+                        "INFO": ["Change"]
+                    }, 
+                    Fore.LIGHTYELLOW_EX , "simple"
+            )
 
+    new_content = check_repeated(new_content)
 
     if kwargs["showfinal"]:
         print_header(" RESULT ",Fore.MAGENTA)

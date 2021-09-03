@@ -136,28 +136,35 @@ def filterlang(**kwargs):
     filename = kwargs["filename"]
 
     process = subprocess.run(['cat',filename],stdout=subprocess.PIPE)
-    re_obj = re.compile(r"(FILTER[\s]*\(LANG\(\?\w*\)[\s=]*([\"']([^'\"]*)[\"'])\))")
-    matches = re_obj.search(process.stdout.decode('utf-8'))
+    re_obj = re.compile(r"(FILTER[\s]*\(LANG\(\?\w*\)[\s=]*([\"']([^'\"]*)[\"'])\))",re.I|re.M)
+    are_there_matches = re_obj.search(process.stdout.decode('utf-8'))
     # pdb.set_trace()
-    if matches:
-        oldline = matches.group(1)
-        newline = set_filter_lang(matches, "{{ g.lang_code }}")
+    if are_there_matches:
+        matches = re_obj.finditer(process.stdout.decode('utf-8'))
+        message = []
+        for match in matches:
+            oldline = match.group(1)
+            newline = set_filter_lang(match, "{{ g.lang_code }}")
 
-        if newline != oldline:
-            replacement=replace_with_sed(
-                filename,oldline, newline,
-                inplace=kwargs["inplace"],
-                text_to_find="FILTER.*g.lang_code")
-            print_info({
-                "Filename": [Path(filename).name], 
-                "Text that will be replaced\n( nline: newtext )": [
-                    '\n'.join(line.strip() for line in re.findall(r'.{1,90}(?:\s+|$)', replacement.decode('utf-8')))
-                    # textwrap.fill(replacement.decode('utf-8'), width=100)
-                ]
-            }, Fore.LIGHTGREEN_EX, "psql")
-        else:
-           print_info({"INFO: " : ["Nothing to change"]}, Fore.LIGHTRED_EX, "plain") 
+            if newline != oldline:
+                replacement=replace_with_sed(
+                    filename,oldline, newline,
+                    inplace=kwargs["inplace"],
+                    text_to_find="FILTER.*g.lang_code"
+                )
+                message.append('\n'.join(line.strip() for line in re.findall(r'.{1,90}(?:\s+|$)', replacement.decode('utf-8'))))
+                
+            else:
+                print_info({"INFO: " : [f"File: {Path(filename).name} - Nothing to change"]}, Fore.LIGHTRED_EX, "plain") 
+        
+        if kwargs["inplace"]:
+            message =  [message[-1]] if message else ""
 
+        print_info({
+                    "Filename": [Path(filename).name], 
+                    "Text that will be replaced\n( nline: newtext )": message
+                }, Fore.LIGHTGREEN_EX, "presto")
+        
     else:
          print_info({
             "WARNING: ": [f"The file '{Path(filename).name}' not has FILTER LANG inside"]
